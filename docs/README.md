@@ -6,7 +6,8 @@ Welcome to the ArchiVision AI documentation hub.
 
 | Guide | Description |
 |-------|-------------|
-| [SETUP.md](./SETUP.md) | Complete developer environment setup |
+| [SETUP.md](./SETUP.md) | Local developer environment setup |
+| [DEPLOYMENT.md](./DEPLOYMENT.md) | Vercel + Render deployment (M1) |
 | [../README.md](../README.md) | Project overview and quick start |
 
 ## Planning Documents (Frozen)
@@ -22,14 +23,14 @@ The following specifications are **frozen** and serve as the single source of tr
 | AI Technical Design Specification | [planning/ai-technical-design-specification.md](./planning/ai-technical-design-specification.md) | 🔒 Frozen |
 | Master Development Roadmap | [planning/master-development-roadmap.md](./planning/master-development-roadmap.md) | 🔒 Frozen |
 
-> **Note:** Planning document bodies will be populated from approved chat specifications during M1. Placeholder files exist to establish structure.
+> Planning files currently hold approved summaries. Full long-form copies may be added later without changing decisions.
 
 ## Implementation Milestones
 
 | Milestone | Focus | Status |
 |-----------|-------|--------|
-| M0 | Project initialization | ✅ Complete |
-| M1 | Deployed application shell | ⏳ Next |
+| M0 | Project initialization | ✅ Complete (frozen) |
+| M1 | Deployed application shell | 🔧 Local complete; cloud deploy pending |
 | M2 | Auth, profiles, preferences | Pending |
 | M3 | Projects foundation | Pending |
 
@@ -41,6 +42,7 @@ See [planning/master-development-roadmap.md](./planning/master-development-roadm
 docs/
 ├── README.md                          # This file
 ├── SETUP.md                           # Developer setup guide
+├── DEPLOYMENT.md                      # Vercel / Render (M1)
 └── planning/                          # Frozen specifications
     ├── README.md
     ├── product-vision.md

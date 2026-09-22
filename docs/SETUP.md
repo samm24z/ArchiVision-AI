@@ -1,9 +1,9 @@
 # ArchiVision AI — Developer Setup Guide
 
-This guide walks a new developer through setting up the ArchiVision AI monorepo from scratch.
+This guide walks a new developer through setting up the ArchiVision AI monorepo locally.
 
-**Current milestone:** M0 — Project Initialization  
-**Scope:** Repository structure, tooling, and local dev servers. No auth, database, or AI yet.
+**Current milestone:** M1 — Deployed Application Shell (local complete; cloud deploy pending)  
+**Scope:** Tooling, health endpoints, CORS, frontend↔backend connectivity. No auth, database, or AI.
 
 ---
 
@@ -38,19 +38,54 @@ cd archivision-ai
 
 ## 2. Environment Variables
 
-Copy the environment template to the repository root:
+The repo root `.env.example` is the **template**. FastAPI and Next.js each need their own local file.
+
+### Backend — `backend/.env`
+
+Settings load `.env` from the **current working directory**. Always start uvicorn from `backend/`.
 
 ```bash
 # Windows (PowerShell)
-Copy-Item .env.example .env
+Copy-Item .env.example backend\.env
 
 # macOS / Linux
-cp .env.example .env
+cp .env.example backend/.env
 ```
 
-Edit `.env` and adjust values if needed. Defaults work for local M0 development.
+Keep at least:
 
-**Important:** Never commit `.env` to Git. It is listed in `.gitignore`.
+```
+ENVIRONMENT=development
+API_HOST=0.0.0.0
+API_PORT=8000
+API_CORS_ORIGINS=http://localhost:3000
+```
+
+A `.env` at the **repository root is not read** by the API.
+
+### Frontend — `frontend/.env.local`
+
+Next.js only loads env files from the `frontend/` directory.
+
+```bash
+# Windows (PowerShell)
+@"
+NEXT_PUBLIC_APP_NAME=ArchiVision AI
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:8000
+"@ | Set-Content frontend\.env.local
+
+# macOS / Linux
+cat > frontend/.env.local << 'EOF'
+NEXT_PUBLIC_APP_NAME=ArchiVision AI
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_API_URL=http://localhost:8000
+EOF
+```
+
+`NEXT_PUBLIC_API_URL` must be the FastAPI origin **without a trailing slash**.
+
+**Important:** Never commit `.env`, `backend/.env`, or `frontend/.env.local`. They are listed in `.gitignore`.
 
 ---
 
@@ -69,7 +104,9 @@ npm run dev
 | `npm run start` | Serve production build |
 | `npm run lint` | Run ESLint |
 
-Open [http://localhost:3000](http://localhost:3000). M0 ships a minimal placeholder — product pages arrive in later milestones.
+Open [http://localhost:3000](http://localhost:3000). M1 shows a connectivity shell (not product UI).
+
+Frontend health (does not call FastAPI): [http://localhost:3000/api/health](http://localhost:3000/api/health)
 
 ---
 
@@ -106,22 +143,38 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 | Command | Purpose |
 |---------|---------|
 | `uvicorn app.main:app --reload` | Dev server with auto-reload |
-| `pytest` | Run backend tests (scaffold only in M0) |
+| `pytest` | Backend tests (health + bootstrap) |
 | `ruff check .` | Lint Python code |
 
-M0 exposes a FastAPI application instance with **no HTTP routes**. The process starts successfully; API endpoints begin in M1.
+Health: [http://localhost:8000/health](http://localhost:8000/health)  
+OpenAPI docs (development only): [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ---
 
-## 5. Verify M0 Completion
+## 5. Verify M1 locally
 
-Run these checks after setup:
+With **both** servers running:
 
-- [ ] `frontend/` — `npm run dev` starts without errors
-- [ ] `frontend/` — `npm run build` completes successfully
-- [ ] `backend/` — `uvicorn app.main:app --reload` starts without errors
-- [ ] `.env` exists locally and is **not** tracked by Git
-- [ ] Both `node_modules/` and `.venv/` are **not** tracked by Git
+```powershell
+# Windows
+.\scripts\verify-m1.ps1
+```
+
+```bash
+# macOS / Linux
+bash scripts/verify-m1.sh
+```
+
+Manual checklist:
+
+- [ ] `GET http://localhost:8000/health` returns `200` and `"status": "ok"`
+- [ ] `GET http://localhost:3000/api/health` returns `200` and `"status": "ok"`
+- [ ] Shell page shows **Connected** (backend reachable + CORS)
+- [ ] `cd backend && pytest` passes
+- [ ] `cd backend && ruff check .` passes
+- [ ] `cd frontend && npm run lint` passes
+- [ ] `cd frontend && npm run build` completes
+- [ ] Env files exist locally and are **not** tracked by Git
 
 ---
 
@@ -153,11 +206,11 @@ npm run dev -- -p 3001
 uvicorn app.main:app --reload --port 8001
 ```
 
-Update `NEXT_PUBLIC_API_URL` in `.env` if you change the backend port.
+If you change the backend port, set `NEXT_PUBLIC_API_URL` in `frontend/.env.local` and restart `npm run dev`.
+
+If you change the frontend origin, set `API_CORS_ORIGINS` in `backend/.env` and restart uvicorn.
 
 ### Python virtual environment not activating (Windows)
-
-Run PowerShell as Administrator once:
 
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -165,31 +218,25 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ### npm install fails
 
-Ensure Node.js 20+ is active:
-
-```bash
-node --version
-```
-
-Delete `node_modules/` and retry:
+Ensure Node.js 20+ is active, then:
 
 ```bash
 rm -rf node_modules package-lock.json
 npm install
 ```
 
+### Shell page: Unable to reach backend
+
+1. Confirm uvicorn is running on the URL in `NEXT_PUBLIC_API_URL`.
+2. Confirm `API_CORS_ORIGINS` includes the exact frontend origin (`http://localhost:3000`).
+3. Restart both servers after changing env files.
+
 ---
 
-## 8. What Comes Next (M1)
+## 8. What Comes Next
 
-M1 will add:
-
-- Deployed frontend on Vercel
-- Deployed backend on Render
-- Health check endpoints
-- Frontend ↔ backend connectivity on production URLs
-
-Do not implement M1 steps until M0 is reviewed and approved.
+- Cloud deploy: [DEPLOYMENT.md](./DEPLOYMENT.md) (Render + Vercel) — do this after local M1 is approved.
+- **M2:** Authentication and database (Supabase). Do not start M2 until M1 is complete.
 
 ---
 

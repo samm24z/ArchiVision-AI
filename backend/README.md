@@ -7,6 +7,7 @@ FastAPI application for ArchiVision AI.
 - FastAPI
 - Uvicorn
 - Python 3.11+
+- pydantic-settings
 
 ## Commands
 
@@ -23,15 +24,36 @@ pytest
 ruff check .
 ```
 
+## Environment
+
+Copy API-related keys from the repo-root `.env.example` into **`backend/.env`**.
+
+Settings load `.env` from the process working directory. Run uvicorn from `backend/` so this file is found. A root-level `.env` is ignored.
+
+| Variable | Purpose |
+|----------|---------|
+| `ENVIRONMENT` | `development` enables `/docs`. Use `production` on Render. |
+| `API_CORS_ORIGINS` | Comma-separated browser origins allowed to call the API. Local default: `http://localhost:3000`. |
+
+## M1 endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/health` | Liveness for Render and the frontend shell |
+
 ## Structure
 
 ```
 backend/
 ├── app/
 │   ├── __init__.py
-│   └── main.py        # FastAPI app instance (M0: no routes)
+│   ├── main.py              # FastAPI app, CORS, routers
+│   ├── core/config.py       # Environment settings
+│   └── api/routes/health.py
 ├── tests/
-│   └── test_app.py    # Scaffold tests
+│   ├── test_app.py
+│   └── test_health.py
+├── render.yaml              # Render service notes (dashboard uses Root Directory backend)
 ├── requirements.txt
 ├── requirements-dev.txt
 └── pyproject.toml
@@ -39,6 +61,6 @@ backend/
 
 ## Milestone Scope
 
-**M0:** FastAPI instance starts successfully. No routes, no database.  
-**M1:** Health endpoint and CORS.  
+**M0:** FastAPI instance starts.  
+**M1:** Health endpoint, CORS, env config.  
 **M2+:** Auth, projects, and domain APIs.

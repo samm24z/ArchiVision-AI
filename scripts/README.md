@@ -4,27 +4,37 @@ Development, deployment, and maintenance scripts for ArchiVision AI.
 
 ## Purpose
 
-Automation that is not part of the application runtime lives here — for example:
+Automation that is not part of the application runtime lives here.
 
-- Database migration helpers (future)
-- RAG corpus ingestion (M11)
-- Local development orchestration
-- Deployment verification
+## M1 scripts
 
-## Status (M0)
+| Script | Purpose |
+|--------|---------|
+| `verify-m1.ps1` | Windows: `GET /health`, `GET /api/health`, CORS origin check |
+| `verify-m1.sh` | Unix: same checks |
 
-**Empty scaffold.** No scripts yet.
+Both assume:
 
-## Planned Scripts (Future Milestones)
+- Backend is already running at `http://localhost:8000`
+- Frontend is already running at `http://localhost:3000`
+
+```powershell
+.\scripts\verify-m1.ps1
+```
+
+```bash
+bash scripts/verify-m1.sh
+```
+
+## Planned scripts (later milestones)
 
 | Script | Milestone | Purpose |
 |--------|-----------|---------|
-| `dev.sh` / `dev.ps1` | M1 | Start frontend + backend together |
-| `verify-setup.sh` | M1 | Smoke-test local environment |
+| `dev.sh` / `dev.ps1` | Optional | Start frontend + backend together |
 | `ingest-rag-corpus.py` | M11 | Embed and load ChromaDB |
 | `seed-templates.py` | M3 | Seed system prompt templates |
 
-## Usage Convention
+## Usage convention
 
 - Scripts should be idempotent where possible.
 - Document each script with a header comment and an entry in `docs/SETUP.md`.

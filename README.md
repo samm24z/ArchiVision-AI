@@ -8,8 +8,9 @@ An AI copilot for architecture, interior design, and home planning — built as 
 
 | Milestone | Status |
 |-----------|--------|
-| M0 — Project Initialization | ✅ Complete |
-| M1 — Deployed Application Shell | ⏳ Pending |
+| M0 — Project Initialization | ✅ Complete (frozen) |
+| M1 — Deployed Application Shell | 🔧 Local implementation (deploy pending) |
+| M2 — Auth, profiles, preferences | Pending |
 
 ## Tech Stack
 
@@ -17,10 +18,10 @@ An AI copilot for architecture, interior design, and home planning — built as 
 |-------|------------|
 | Frontend | Next.js, React, TypeScript, Tailwind CSS, shadcn/ui |
 | Backend | FastAPI, Python |
-| Database | PostgreSQL (Supabase) |
-| Auth | Supabase Auth |
-| Storage | Supabase Storage |
-| AI | SDXL, ControlNet, Qwen2.5, Qwen2-VL, ChromaDB |
+| Database | PostgreSQL (Supabase) — from M2 |
+| Auth | Supabase Auth — from M2 |
+| Storage | Supabase Storage — from M4 |
+| AI | SDXL, ControlNet, Qwen2.5, Qwen2-VL, ChromaDB — later milestones |
 | Deployment | Vercel, Render, Supabase |
 
 ## Repository Structure
@@ -31,7 +32,7 @@ ArchiVision AI/
 ├── frontend/       # Next.js web application
 ├── backend/        # FastAPI application
 ├── shared/         # Cross-cutting contracts (types, constants) — future use
-├── scripts/        # Development and deployment scripts — future use
+├── scripts/        # Verification and maintenance scripts
 ├── .env.example    # Environment variable template
 └── README.md       # This file
 ```
@@ -46,15 +47,14 @@ See **[docs/SETUP.md](docs/SETUP.md)** for the complete developer setup guide.
 - Python 3.11+
 - Git
 
-### Frontend
+### Environment files
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+See `.env.example`. Local copies:
 
-Opens at [http://localhost:3000](http://localhost:3000)
+- Frontend: `frontend/.env.local` (`NEXT_PUBLIC_API_URL`, …)
+- Backend: `backend/.env` (`API_CORS_ORIGINS`, `ENVIRONMENT`, …)
+
+Never commit those files.
 
 ### Backend
 
@@ -70,15 +70,46 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-API process starts at [http://localhost:8000](http://localhost:8000) (no routes exposed in M0).
+- API: [http://localhost:8000](http://localhost:8000)
+- Health: [http://localhost:8000/health](http://localhost:8000/health)
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+- App shell: [http://localhost:3000](http://localhost:3000)
+- Frontend health: [http://localhost:3000/api/health](http://localhost:3000/api/health)
+
+The shell page reports whether the frontend can reach `GET /health` on the API.
+
+### M1 verification (servers must already be running)
+
+```powershell
+# Windows
+.\scripts\verify-m1.ps1
+```
+
+```bash
+# macOS / Linux
+bash scripts/verify-m1.sh
+```
 
 ## Documentation
 
 | Document | Location |
 |----------|----------|
 | Developer setup | [docs/SETUP.md](docs/SETUP.md) |
+| Deployment (Vercel / Render) | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 | Documentation index | [docs/README.md](docs/README.md) |
 | Frozen planning specs | [docs/planning/](docs/planning/) |
+
+## Live URLs
+
+Not deployed yet. After Render and Vercel go live, record URLs in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## License
 
