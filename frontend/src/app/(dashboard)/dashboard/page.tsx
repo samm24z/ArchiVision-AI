@@ -1,227 +1,186 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { useAuth } from "@/components/auth/auth-provider";
-import { getApiBaseUrl } from "@/lib/env";
-
-interface BackendProfileResult {
-  status: "idle" | "loading" | "success" | "error";
-  data?: {
-    id: string;
-    email: string | null;
-    role: string;
-    app_metadata: Record<string, unknown>;
-    user_metadata: Record<string, unknown>;
-  };
-  error?: string;
-}
+import { ProjectCard } from "@/components/projects/project-card";
+import { ProjectForm } from "@/components/projects/project-form";
+import {
+  ApiRequestError,
+  createProject,
+  fetchProjects,
+  type Project,
+  type ProjectCreateInput,
+  type ProjectUpdateInput,
+} from "@/lib/api";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, isLoading, signOut, getToken } = useAuth();
-  const [backendCheck, setBackendCheck] = useState<BackendProfileResult>({
-    status: "idle",
-  });
-  const apiBaseUrl = getApiBaseUrl();
+  const { user, isLoading: authLoading, getToken, signOut } = useAuth();
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "ready" | "error">("loading");
+  const [error, setError] = useState<string | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      router.replace("/login?next=/dashboard");
+      return;
+    }
+
+    let cancelled = false;
+    setLoadState("loading");
+
+    const loadProjects = async () => {
+      try {
+        const token = await getToken();
+        if (!token) throw new Error("Your session has expired. Please sign in again.");
+        const data = await fetchProjects(token);
+        if (!cancelled) {
+          setProjects(data);
+          setError(null);
+          setLoadState("ready");
+        }
+      } catch (loadError) {
+        if (cancelled) return;
+        if (loadError instanceof ApiRequestError && loadError.status === 401) {
+          await signOut();
+          router.replace("/login?next=/dashboard");
+          return;
+        }
+        setError(loadError instanceof Error ? loadError.message : "Unable to load your projects.");
+        setLoadState("error");
+      }
+    };
+
+    void loadProjects();
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, getToken, router, signOut, user]);
+
+  const handleCreate = async (input: ProjectCreateInput | ProjectUpdateInput) => {
+    setIsCreating(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error("Your session has expired. Please sign in again.");
+      const created = await createProject(token, input as ProjectCreateInput);
+      router.push(`/dashboard/projects/${created.id}`);
+    } catch (createError) {
+      if (createError instanceof ApiRequestError && createError.status === 401) {
+        await signOut();
+        router.replace("/login?next=/dashboard");
+        return;
+      }
+      setError(createError instanceof Error ? createError.message : "Unable to create the project.");
+      setIsCreating(false);
+    }
+  };
 
   const handleSignOut = async () => {
     await signOut();
-    router.push("/login");
-    router.refresh();
+    router.replace("/login");
   };
 
-  const verifyBackendAuth = async () => {
-    setBackendCheck({ status: "loading" });
-    try {
-      const token = await getToken();
-      if (!token) {
-        setBackendCheck({
-          status: "error",
-          error: "No active access token found in browser session.",
-        });
-        return;
-      }
-
-      const res = await fetch(`${apiBaseUrl}/api/v1/auth/me`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!res.ok) {
-        const errorBody = await res.text();
-        setBackendCheck({
-          status: "error",
-          error: `HTTP ${res.status}: ${errorBody}`,
-        });
-        return;
-      }
-
-      const data = await res.json();
-      setBackendCheck({
-        status: "success",
-        data,
-      });
-    } catch (err) {
-      setBackendCheck({
-        status: "error",
-        error:
-          err instanceof Error
-            ? err.message
-            : "Network error reaching backend API.",
-      });
-    }
-  };
-
-  useEffect(() => {
-    if (user) {
-      verifyBackendAuth();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
-
-  if (isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-50 p-6">
-        <p className="text-sm text-neutral-600">Loading session…</p>
-      </div>
-    );
+  if (authLoading || (!user && loadState === "loading")) {
+    return <DashboardLoading />;
   }
 
   return (
-    <div className="min-h-screen bg-neutral-50 px-4 py-12 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-2xl space-y-6">
-        {/* Header bar */}
-        <header className="flex items-center justify-between rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
+    <main className="min-h-screen bg-neutral-50 px-4 py-8 sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-6xl">
+        <header className="flex flex-col gap-6 border-b border-neutral-200 pb-8 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-brand-600">
-              Milestone M2
-            </p>
-            <h1 className="text-xl font-bold tracking-tight text-neutral-900">
-              ArchiVision AI Dashboard
-            </h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="rounded-lg border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
-            >
-              Public Shell
+            <Link href="/" className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-600">
+              ArchiVision AI
             </Link>
-            <button
-              onClick={handleSignOut}
-              className="rounded-lg bg-neutral-900 px-3.5 py-1.5 text-xs font-medium text-white hover:bg-neutral-800"
-            >
-              Sign Out
+            <p className="mt-8 text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">Project hub</p>
+            <h1 className="mt-2 text-4xl font-semibold tracking-tight text-neutral-950 sm:text-5xl">Your projects</h1>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-neutral-600">
+              Keep every architectural idea in one place, ready for the next design decision.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm text-neutral-500">
+              {projects.length} {projects.length === 1 ? "project" : "projects"}
+            </span>
+            <button type="button" onClick={() => setIsCreateOpen((open) => !open)} className="button-primary" aria-expanded={isCreateOpen}>
+              {isCreateOpen ? "Close form" : "Create project"}
             </button>
+            <button type="button" onClick={handleSignOut} className="button-secondary">Sign out</button>
           </div>
         </header>
 
-        {/* User Identity Card */}
-        <section className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-            Frontend Supabase Session
-          </h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
-            <div className="rounded-lg bg-neutral-50 p-3">
-              <span className="text-xs text-neutral-500 block">Email</span>
-              <span className="font-mono text-neutral-900 text-xs break-all">
-                {user?.email || "N/A"}
-              </span>
+        {isCreateOpen && (
+          <section className="mt-8 max-w-3xl rounded-2xl border border-brand-100 bg-brand-50/50 p-5 sm:p-7">
+            <div className="mb-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-brand-600">New project</p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-neutral-950">Start with the essentials</h2>
             </div>
-            <div className="rounded-lg bg-neutral-50 p-3">
-              <span className="text-xs text-neutral-500 block">User ID (sub)</span>
-              <span className="font-mono text-neutral-900 text-xs break-all">
-                {user?.id || "N/A"}
-              </span>
-            </div>
-            <div className="rounded-lg bg-neutral-50 p-3">
-              <span className="text-xs text-neutral-500 block">Full Name</span>
-              <span className="text-neutral-900 text-xs font-medium">
-                {(user?.user_metadata?.full_name as string) || "Not set"}
-              </span>
-            </div>
-            <div className="rounded-lg bg-neutral-50 p-3">
-              <span className="text-xs text-neutral-500 block">Created At</span>
-              <span className="text-neutral-900 text-xs">
-                {user?.created_at
-                  ? new Date(user.created_at).toLocaleString()
-                  : "N/A"}
-              </span>
-            </div>
-          </div>
-        </section>
+            <ProjectForm
+              mode="create"
+              isSubmitting={isCreating}
+              error={error}
+              onCancel={() => {
+                setIsCreateOpen(false);
+                setError(null);
+              }}
+              onSubmit={handleCreate}
+            />
+          </section>
+        )}
 
-        {/* Backend Handshake Verification Card */}
-        <section className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                FastAPI Authenticated Handshake
-              </h2>
-              <p className="text-xs text-neutral-500 font-mono mt-0.5">
-                GET {apiBaseUrl}/api/v1/auth/me
-              </p>
-            </div>
-            <button
-              onClick={verifyBackendAuth}
-              disabled={backendCheck.status === "loading"}
-              className="rounded-md border border-neutral-300 px-2.5 py-1 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-            >
-              {backendCheck.status === "loading" ? "Checking…" : "Re-test"}
-            </button>
-          </div>
+        {loadState === "error" && (
+          <section className="mt-8 rounded-2xl border border-red-200 bg-red-50 p-5" role="alert">
+            <h2 className="font-semibold text-red-950">Projects are unavailable</h2>
+            <p className="mt-1 text-sm text-red-800">{error}</p>
+            <button type="button" onClick={() => window.location.reload()} className="mt-4 button-secondary">Try again</button>
+          </section>
+        )}
 
-          {backendCheck.status === "loading" && (
-            <p className="text-sm text-neutral-600">
-              Forwarding JWT bearer token to FastAPI backend…
+        {loadState === "ready" && projects.length === 0 && !isCreateOpen && (
+          <section className="mt-10 rounded-2xl border border-dashed border-neutral-300 bg-white px-6 py-16 text-center shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-600">A clear beginning</p>
+            <h2 className="mx-auto mt-3 max-w-lg text-3xl font-semibold tracking-tight text-neutral-950">Your first project starts here.</h2>
+            <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-neutral-600">
+              Create a project to give your ideas a home and build the context for every design step ahead.
             </p>
-          )}
+            <button type="button" onClick={() => setIsCreateOpen(true)} className="mt-7 button-primary">Create your first project</button>
+          </section>
+        )}
 
-          {backendCheck.status === "success" && backendCheck.data && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-600" />
-                <p className="text-sm font-semibold text-emerald-900">
-                  Backend Verified JWT Token
-                </p>
-              </div>
-              <p className="text-xs text-emerald-800">
-                FastAPI decoded and validated the Supabase access token via PyJWT
-                without external network latency.
-              </p>
-              <pre className="mt-2 overflow-x-auto rounded bg-white p-2.5 font-mono text-[11px] text-neutral-800 border border-emerald-100">
-                {JSON.stringify(backendCheck.data, null, 2)}
-              </pre>
+        {loadState === "ready" && projects.length > 0 && (
+          <section className="mt-10" aria-labelledby="project-list-heading">
+            <div className="flex items-baseline justify-between gap-4">
+              <h2 id="project-list-heading" className="text-xl font-semibold text-neutral-950">Active projects</h2>
+              <p className="text-xs text-neutral-500">Recently updated first</p>
             </div>
-          )}
-
-          {backendCheck.status === "error" && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-amber-600" />
-                <p className="text-sm font-semibold text-amber-900">
-                  Backend Verification Notice
-                </p>
-              </div>
-              <p className="text-xs text-amber-800">{backendCheck.error}</p>
-              <p className="text-xs text-neutral-500">
-                Ensure backend is running with SUPABASE_JWT_SECRET configured in
-                backend/.env.
-              </p>
+            <div className="mt-5 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+              {projects.map((project) => <ProjectCard key={project.id} project={project} />)}
             </div>
-          )}
-        </section>
-
-        {/* Milestone Note */}
-        <p className="text-center text-xs text-neutral-500">
-          ArchiVision AI — Milestone M2 Authentication Foundation. Projects and
-          Studio features unlock in M3+.
-        </p>
+          </section>
+        )}
       </div>
-    </div>
+    </main>
+  );
+}
+
+function DashboardLoading() {
+  return (
+    <main className="min-h-screen bg-neutral-50 px-4 py-8 sm:px-6 lg:px-10">
+      <div className="mx-auto max-w-6xl" aria-busy="true" aria-label="Loading projects">
+        <div className="h-4 w-36 animate-pulse rounded bg-neutral-200" />
+        <div className="mt-12 h-12 w-72 animate-pulse rounded bg-neutral-200" />
+        <div className="mt-4 h-5 w-full max-w-lg animate-pulse rounded bg-neutral-200" />
+        <div className="mt-10 grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((item) => <div key={item} className="h-52 animate-pulse rounded-2xl bg-white shadow-sm" />)}
+        </div>
+      </div>
+    </main>
   );
 }
