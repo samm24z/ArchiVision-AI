@@ -16,3 +16,15 @@ export function getAppName(): string {
 export function getAppUrl(): string {
   return process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
 }
+
+export function getSupabaseUrl(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() || "";
+}
+
+export function getSupabaseAnonKey(): string {
+  return (
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+    ""
+  );
+}

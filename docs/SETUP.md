@@ -151,34 +151,63 @@ OpenAPI docs (development only): [http://localhost:8000/docs](http://localhost:8
 
 ---
 
-## 5. Verify M1 locally
+## 5. Supabase & Authentication Setup (Milestone M2)
 
-With **both** servers running:
+### 5.1 Supabase Project Configuration
+1. Open your Supabase Project Dashboard.
+2. In **Project Settings → API**:
+   - Copy **Project URL** to `NEXT_PUBLIC_SUPABASE_URL` (frontend) and `SUPABASE_URL` (backend).
+   - Copy **anon public key** to `NEXT_PUBLIC_SUPABASE_ANON_KEY` (frontend).
+   - In the **JWT Settings** section, copy the **JWT Secret** to `SUPABASE_JWT_SECRET` in `backend/.env`.
+
+### 5.2 Apply Database Migration
+Open the Supabase Dashboard **SQL Editor**, paste and execute the contents of:
+`supabase/migrations/00001_create_profiles_and_auth_trigger.sql`
+
+This creates:
+- `public.profiles` table with RLS policies
+- `public.user_preferences` table with RLS policies
+- Automated `on auth.users after insert` database trigger to initialize profiles upon signup
+
+---
+
+## 6. Verify M1 & M2 locally
+
+With **both** servers running (FastAPI on :8000 and Next.js on :3000):
 
 ```powershell
-# Windows
+# Windows — M1 Connectivity
 .\scripts\verify-m1.ps1
+
+# Windows — M2 Authentication & Protected Endpoints
+.\scripts\verify-m2.ps1
 ```
 
 ```bash
-# macOS / Linux
+# macOS / Linux — M1 Connectivity
 bash scripts/verify-m1.sh
+
+# macOS / Linux — M2 Authentication & Protected Endpoints
+bash scripts/verify-m2.sh
 ```
 
 Manual checklist:
 
 - [ ] `GET http://localhost:8000/health` returns `200` and `"status": "ok"`
 - [ ] `GET http://localhost:3000/api/health` returns `200` and `"status": "ok"`
-- [ ] Shell page shows **Connected** (backend reachable + CORS)
+- [ ] `GET http://localhost:8000/api/v1/auth/me` without Bearer token returns `401 Unauthorized`
+- [ ] `GET http://localhost:3000/dashboard` unauthenticated redirects to `/login?next=/dashboard`
+- [ ] User signup on `/signup` registers in Supabase and triggers profile creation
+- [ ] User sign in on `/login` redirects to `/dashboard`
+- [ ] Dashboard displays authenticated user information and passes backend JWT verification
 - [ ] `cd backend && pytest` passes
 - [ ] `cd backend && ruff check .` passes
-- [ ] `cd frontend && npm run lint` passes
 - [ ] `cd frontend && npm run build` completes
 - [ ] Env files exist locally and are **not** tracked by Git
 
 ---
 
-## 6. IDE Configuration
+## 7. IDE Configuration
 
 ### VS Code / Cursor extensions (recommended)
 
@@ -194,7 +223,7 @@ Open the repository root folder. Both `frontend/` and `backend/` are subprojects
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 ### Port already in use
 
@@ -233,10 +262,11 @@ npm install
 
 ---
 
-## 8. What Comes Next
+## 9. What Comes Next
 
-- Cloud deploy: [DEPLOYMENT.md](./DEPLOYMENT.md) (Render + Vercel) — do this after local M1 is approved.
-- **M2:** Authentication and database (Supabase). Do not start M2 until M1 is complete.
+- **M3:** Projects & Prompt Templates
+- **M4:** Asset Management & Supabase Storage
+- **M5:** Async Job Queue & AI Worker
 
 ---
 

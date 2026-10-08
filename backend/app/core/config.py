@@ -22,6 +22,13 @@ class Settings(BaseSettings):
         default="http://localhost:3000",
         alias="API_CORS_ORIGINS",
     )
+    supabase_url: str = Field(default="", alias="SUPABASE_URL")
+    supabase_jwt_secret: str = Field(default="", alias="SUPABASE_JWT_SECRET")
+    supabase_service_role_key: str = Field(
+        default="",
+        alias="SUPABASE_SERVICE_ROLE_KEY",
+    )
+
 
     @property
     def cors_origins(self) -> list[str]:

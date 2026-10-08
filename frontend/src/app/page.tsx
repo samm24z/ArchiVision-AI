@@ -1,7 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
+
+import { useAuth } from "@/components/auth/auth-provider";
 import { fetchBackendHealth, type ApiHealthResult } from "@/lib/api";
 import { getApiBaseUrl, getAppName } from "@/lib/env";
 
@@ -13,6 +16,7 @@ export default function M1ShellPage() {
   const [state, setState] = useState<ConnectionState>({ status: "loading" });
   const appName = getAppName();
   const apiBaseUrl = getApiBaseUrl();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
 
   useEffect(() => {
     let cancelled = false;
@@ -30,16 +34,57 @@ export default function M1ShellPage() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-6 py-16">
-      <p className="text-sm font-medium tracking-wide text-brand-600">
-        Milestone M1
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium tracking-wide text-brand-600">
+          Milestone M1 &amp; M2
+        </p>
+        <div className="flex items-center gap-2 text-xs">
+          {authLoading ? (
+            <span className="text-neutral-400">Loading auth…</span>
+          ) : isAuthenticated ? (
+            <Link
+              href="/dashboard"
+              className="rounded-lg bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700"
+            >
+              Go to Dashboard →
+            </Link>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-lg border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 hover:bg-neutral-50"
+              >
+                Sign In
+              </Link>
+              <Link
+                href="/signup"
+                className="rounded-lg bg-brand-600 px-3 py-1.5 font-medium text-white hover:bg-brand-700"
+              >
+                Sign Up
+              </Link>
+            </>
+          )}
+        </div>
+      </div>
       <h1 className="mt-2 text-3xl font-semibold tracking-tight">{appName}</h1>
       <p className="mt-3 text-sm leading-6 text-neutral-600">
-        Application shell. This page verifies that the web app can reach the
-        FastAPI backend. Product features begin in later milestones.
+        Application shell &amp; authentication verification. This page verifies that
+        the web app reaches the FastAPI backend and provides entry points to M2
+        authenticated features.
       </p>
 
-      <section className="mt-8 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
+      {isAuthenticated && user && (
+        <section className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-xs">
+          <p className="font-semibold text-emerald-900">
+            Authenticated as: <span className="font-normal">{user.email}</span>
+          </p>
+          <p className="text-emerald-700 mt-1">
+            User ID: <span className="font-mono">{user.id}</span>
+          </p>
+        </section>
+      )}
+
+      <section className="mt-6 rounded-lg border border-neutral-200 bg-white p-5 shadow-sm">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">
           Backend connectivity
         </h2>
