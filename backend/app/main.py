@@ -7,6 +7,7 @@ Milestone M1: Health endpoint, CORS, and application configuration.
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.assets import router as assets_router
 from app.api.routes.auth import router as auth_router
 from app.api.routes.health import router as health_router
 from app.api.routes.projects import router as projects_router
@@ -34,3 +35,4 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(projects_router)
+app.include_router(assets_router)
