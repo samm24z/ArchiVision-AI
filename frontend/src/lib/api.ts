@@ -1,4 +1,4 @@
-/** Shared API client for backend health and authenticated project requests. */
+/** Shared API client for backend health, projects, and asset requests. */
 
 import { getApiBaseUrl } from "./env";
 
@@ -45,6 +45,69 @@ export type ProjectUpdateInput = Partial<
     "name" | "description" | "project_type" | "city" | "climate" | "cover_image_url"
   >
 >;
+
+export type AssetCategory =
+  | "sketch"
+  | "floor_plan"
+  | "reference_image"
+  | "document";
+
+export type UploadStatus = "uploading" | "available" | "failed";
+
+export type Asset = {
+  id: string;
+  project_id: string;
+  category: AssetCategory;
+  original_filename: string;
+  storage_path: string;
+  mime_type: string;
+  file_size_bytes: number;
+  width: number | null;
+  height: number | null;
+  metadata: Record<string, unknown> | null;
+  upload_status: UploadStatus;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};
+
+export type SignedAssetUrl = {
+  asset_id: string;
+  signed_url: string;
+  expires_in_seconds: number;
+};
+
+export const MAX_ASSET_SIZE_BYTES = 20 * 1024 * 1024; // 20 MiB = 20,971,520 bytes
+
+export const CATEGORY_ALLOWED_FORMATS: Record<
+  AssetCategory,
+  { label: string; extensions: string[]; mimeTypes: string[]; description: string }
+> = {
+  sketch: {
+    label: "Sketch",
+    extensions: [".jpg", ".jpeg", ".png", ".webp"],
+    mimeTypes: ["image/jpeg", "image/png", "image/webp"],
+    description: "JPEG, PNG, WebP up to 20 MB",
+  },
+  floor_plan: {
+    label: "Floor Plan",
+    extensions: [".jpg", ".jpeg", ".png", ".pdf"],
+    mimeTypes: ["image/jpeg", "image/png", "application/pdf"],
+    description: "JPEG, PNG, PDF up to 20 MB",
+  },
+  reference_image: {
+    label: "Reference Image",
+    extensions: [".jpg", ".jpeg", ".png", ".webp"],
+    mimeTypes: ["image/jpeg", "image/png", "image/webp"],
+    description: "JPEG, PNG, WebP up to 20 MB",
+  },
+  document: {
+    label: "Document",
+    extensions: [".pdf"],
+    mimeTypes: ["application/pdf"],
+    description: "PDF up to 20 MB",
+  },
+};
 
 export class ApiRequestError extends Error {
   status: number;
@@ -172,5 +235,135 @@ export function updateProject(
 export function archiveProject(token: string, projectId: string): Promise<void> {
   return requestApi<void>(`/api/v1/projects/${projectId}`, token, {
     method: "DELETE",
+  });
+}
+
+/* -------------------------------------------------------------------------- */
+/*                              M4 S4.2 Asset APIs                            */
+/* -------------------------------------------------------------------------- */
+
+export function fetchProjectAssets(
+  token: string,
+  projectId: string
+): Promise<Asset[]> {
+  return requestApi<Asset[]>(`/api/v1/projects/${projectId}/assets`, token);
+}
+
+export function fetchAssetMetadata(
+  token: string,
+  assetId: string
+): Promise<Asset> {
+  return requestApi<Asset>(`/api/v1/assets/${assetId}`, token);
+}
+
+export function getAssetSignedUrl(
+  token: string,
+  assetId: string
+): Promise<SignedAssetUrl> {
+  return requestApi<SignedAssetUrl>(`/api/v1/assets/${assetId}/signed-url`, token, {
+    method: "POST",
+  });
+}
+
+export function deleteAsset(token: string, assetId: string): Promise<void> {
+  return requestApi<void>(`/api/v1/assets/${assetId}`, token, {
+    method: "DELETE",
+  });
+}
+
+export function uploadProjectAsset(
+  token: string,
+  projectId: string,
+  file: File,
+  category: AssetCategory,
+  onProgress?: (percent: number) => void,
+  abortSignal?: AbortSignal
+): Promise<Asset> {
+  return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) {
+      reject(new DOMException("Upload was cancelled.", "AbortError"));
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append("category", category);
+    formData.append("file", file);
+
+    const onAbort = () => {
+      xhr.abort();
+      reject(new DOMException("Upload was cancelled.", "AbortError"));
+    };
+
+    if (abortSignal) {
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && onProgress) {
+        const percent = Math.min(
+          100,
+          Math.round((event.loaded / event.total) * 100)
+        );
+        onProgress(percent);
+      }
+    };
+
+    xhr.onload = () => {
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", onAbort);
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText) as Asset;
+          resolve(data);
+        } catch {
+          reject(
+            new ApiRequestError(
+              xhr.status,
+              "Invalid response received from server."
+            )
+          );
+        }
+      } else {
+        let message = `Backend returned HTTP ${xhr.status}.`;
+        try {
+          const body = JSON.parse(xhr.responseText) as { detail?: string };
+          if (body.detail) {
+            message = body.detail;
+          }
+        } catch {
+          // Fall back to status-based message.
+        }
+        reject(new ApiRequestError(xhr.status, message));
+      }
+    };
+
+    xhr.onerror = () => {
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", onAbort);
+      }
+      reject(
+        new ApiRequestError(
+          0,
+          "Network connection failure during upload. Please check your connection and try again."
+        )
+      );
+    };
+
+    xhr.ontimeout = () => {
+      if (abortSignal) {
+        abortSignal.removeEventListener("abort", onAbort);
+      }
+      reject(new ApiRequestError(408, "Upload timed out. Please try again."));
+    };
+
+    const url = `${getApiBaseUrl()}/api/v1/projects/${projectId}/assets`;
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.setRequestHeader("Accept", "application/json");
+    // Do not set Content-Type header so browser computes multipart boundary automatically.
+    xhr.send(formData);
   });
 }

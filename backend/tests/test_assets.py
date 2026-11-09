@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -9,10 +10,17 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.assets import get_assets_repository
 from app.core.asset_validation import AssetValidationError, validate_upload
-from app.core.assets import AssetNotFoundError, AssetReconciliationError
+from app.core.assets import (
+    AssetNotFoundError,
+    AssetReconciliationError,
+    AssetRepositoryError,
+    AssetsRepository,
+)
 from app.core.config import Settings, get_settings
 from app.main import app
 from app.schemas.assets import (
+    SIGNED_URL_EXPIRY_SECONDS,
+    STORAGE_BUCKET,
     AssetCategory,
     AssetResponse,
     SignedAssetUrlResponse,
@@ -327,3 +335,292 @@ def test_reconciliation_error_is_not_hidden(
         f"/api/v1/assets/{repository.asset.id}", headers=auth_header()
     )
     assert response.status_code == 502
+
+
+@pytest.fixture
+def repo_with_asset() -> tuple[AssetsRepository, AssetResponse]:
+    """Provide an AssetsRepository instance with a pre-mocked active asset."""
+    settings = Settings(
+        ENVIRONMENT="development",
+        API_HOST="0.0.0.0",
+        API_PORT=8000,
+        API_CORS_ORIGINS="http://localhost:3000",
+        SUPABASE_URL="https://test-project.supabase.co",
+        SUPABASE_JWT_SECRET=TEST_JWT_SECRET,
+        SUPABASE_SERVICE_ROLE_KEY="test-service-role-key",
+    )
+    repo = AssetsRepository(settings)
+    sample_asset = asset_response()
+    repo.get = AsyncMock(return_value=sample_asset)
+    return repo, sample_asset
+
+
+async def test_signed_url_success_list_response(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Supabase Storage list response returns the authorized signed URL."""
+    repo, sample_asset = repo_with_asset
+    repo._request_storage = AsyncMock(
+        return_value=[
+            {
+                "error": None,
+                "path": sample_asset.storage_path,
+                "signedURL": "/object/sign/project-assets/test-token",
+            }
+        ]
+    )
+    result = await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+    assert result.asset_id == sample_asset.id
+    assert result.expires_in_seconds == SIGNED_URL_EXPIRY_SECONDS
+    assert (
+        result.signed_url
+        == "https://test-project.supabase.co/storage/v1/object/sign/project-assets/test-token"
+    )
+
+
+async def test_signed_url_success_dict_response(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Supported dictionary formats return the authorized signed URL."""
+    repo, sample_asset = repo_with_asset
+
+    # Direct signedURL
+    repo._request_storage = AsyncMock(
+        return_value={"signedURL": "/object/sign/project-assets/direct"}
+    )
+    result = await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+    assert (
+        result.signed_url
+        == "https://test-project.supabase.co/storage/v1/object/sign/project-assets/direct"
+    )
+
+    # Direct signed_url snake_case
+    repo._request_storage = AsyncMock(
+        return_value={"signed_url": "/object/sign/project-assets/snake"}
+    )
+    result = await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+    assert (
+        result.signed_url
+        == "https://test-project.supabase.co/storage/v1/object/sign/project-assets/snake"
+    )
+
+    # Nested signedURLs array in dictionary
+    repo._request_storage = AsyncMock(
+        return_value={
+            "signedURLs": [
+                {
+                    "error": None,
+                    "signedURL": "/object/sign/project-assets/nested",
+                }
+            ]
+        }
+    )
+    result = await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+    assert (
+        result.signed_url
+        == "https://test-project.supabase.co/storage/v1/object/sign/project-assets/nested"
+    )
+
+
+async def test_signed_url_empty_list_raises_error(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Empty list response from Supabase Storage raises AssetRepositoryError."""
+    repo, sample_asset = repo_with_asset
+    repo._request_storage = AsyncMock(return_value=[])
+    with pytest.raises(
+        AssetRepositoryError, match="Supabase did not return a signed URL"
+    ):
+        await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+
+
+async def test_signed_url_missing_url_raises_error(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Missing or empty signedURL value raises AssetRepositoryError."""
+    repo, sample_asset = repo_with_asset
+
+    # Missing key in list item
+    repo._request_storage = AsyncMock(
+        return_value=[{"error": None, "path": sample_asset.storage_path}]
+    )
+    with pytest.raises(
+        AssetRepositoryError, match="Supabase did not return a signed URL"
+    ):
+        await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+
+    # Empty string in list item
+    repo._request_storage = AsyncMock(
+        return_value=[{"error": None, "signedURL": "   "}]
+    )
+    with pytest.raises(
+        AssetRepositoryError, match="Supabase did not return a signed URL"
+    ):
+        await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+
+
+async def test_signed_url_storage_error_raises_error(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Storage error field in list or dictionary raises AssetRepositoryError."""
+    repo, sample_asset = repo_with_asset
+
+    # Error field in list
+    repo._request_storage = AsyncMock(
+        return_value=[{"error": "Object not found", "path": sample_asset.storage_path}]
+    )
+    with pytest.raises(
+        AssetRepositoryError, match="Supabase Storage error generating signed URL"
+    ):
+        await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+
+    # Error field in dictionary
+    repo._request_storage = AsyncMock(
+        return_value={"error": "Bucket not accessible"}
+    )
+    with pytest.raises(
+        AssetRepositoryError, match="Supabase Storage error generating signed URL"
+    ):
+        await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+
+
+@pytest.mark.parametrize(
+    "invalid_response",
+    [
+        None,
+        123,
+        "unexpected string",
+        True,
+        ["not-a-dict"],
+        {"signedURLs": []},
+        {"signedURLs": ["not-a-dict"]},
+    ],
+)
+async def test_signed_url_invalid_response_types_raises_error(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+    invalid_response: object,
+) -> None:
+    """Malformed or unsupported response types raise AssetRepositoryError."""
+    repo, sample_asset = repo_with_asset
+    repo._request_storage = AsyncMock(return_value=invalid_response)
+    with pytest.raises(
+        AssetRepositoryError, match="Supabase did not return a signed URL"
+    ):
+        await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+
+
+async def test_signed_url_absolute_url_construction(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Relative URLs are prefixed with storage host; absolute URLs are preserved."""
+    repo, sample_asset = repo_with_asset
+
+    # Relative path
+    repo._request_storage = AsyncMock(
+        return_value=[{"error": None, "signedURL": "/object/sign/bucket/asset.jpg"}]
+    )
+    result = await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+    assert (
+        result.signed_url
+        == "https://test-project.supabase.co/storage/v1/object/sign/bucket/asset.jpg"
+    )
+
+    # Pre-existing absolute path
+    repo._request_storage = AsyncMock(
+        return_value=[
+            {
+                "error": None,
+                "signedURL": "https://cdn.example.com/object/sign/asset.jpg",
+            }
+        ]
+    )
+    result = await repo.signed_url(UUID(TEST_USER_ID), sample_asset.id)
+    assert result.signed_url == "https://cdn.example.com/object/sign/asset.jpg"
+
+
+async def test_soft_delete_success(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Storage object is removed via DELETE and metadata is soft-deleted."""
+    repo, sample_asset = repo_with_asset
+    repo._request_storage = AsyncMock(
+        return_value=[{"name": sample_asset.original_filename}]
+    )
+    repo._request_rest = AsyncMock(
+        return_value=[
+            {"id": str(sample_asset.id), "deleted_at": "2026-11-09T00:00:00Z"}
+        ]
+    )
+
+    await repo.soft_delete(UUID(TEST_USER_ID), sample_asset.id)
+
+    repo._request_storage.assert_called_once_with(
+        "DELETE",
+        f"object/{STORAGE_BUCKET}",
+        payload={"prefixes": [sample_asset.storage_path]},
+    )
+    assert repo._request_rest.call_count == 1
+    call_args = repo._request_rest.call_args
+    assert call_args[0][0] == "PATCH"
+    assert call_args[0][1] == "assets"
+    assert ("id", f"eq.{sample_asset.id}") in call_args[1]["params"]
+    assert ("deleted_at", "is.null") in call_args[1]["params"]
+    assert "deleted_at" in call_args[1]["payload"]
+
+
+async def test_soft_delete_idempotent_when_storage_object_already_missing(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Missing Storage object (empty list) still allows metadata soft-deletion."""
+    repo, sample_asset = repo_with_asset
+    repo._request_storage = AsyncMock(return_value=[])
+    repo._request_rest = AsyncMock(
+        return_value=[
+            {"id": str(sample_asset.id), "deleted_at": "2026-11-09T00:00:00Z"}
+        ]
+    )
+
+    await repo.soft_delete(UUID(TEST_USER_ID), sample_asset.id)
+
+    repo._request_storage.assert_called_once_with(
+        "DELETE",
+        f"object/{STORAGE_BUCKET}",
+        payload={"prefixes": [sample_asset.storage_path]},
+    )
+    assert repo._request_rest.call_count == 1
+
+
+async def test_soft_delete_storage_failure_aborts_without_metadata_patch(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Storage deletion failure aborts before modifying metadata."""
+    repo, sample_asset = repo_with_asset
+    repo._request_storage = AsyncMock(
+        side_effect=AssetRepositoryError("Storage network error")
+    )
+    repo._request_rest = AsyncMock()
+
+    with pytest.raises(
+        AssetReconciliationError,
+        match="Storage object removal failed; metadata was not soft-deleted",
+    ):
+        await repo.soft_delete(UUID(TEST_USER_ID), sample_asset.id)
+
+    repo._request_rest.assert_not_called()
+
+
+async def test_soft_delete_metadata_failure_raises_reconciliation_error(
+    repo_with_asset: tuple[AssetsRepository, AssetResponse],
+) -> None:
+    """Metadata soft-delete returning no row raises AssetReconciliationError."""
+    repo, sample_asset = repo_with_asset
+    repo._request_storage = AsyncMock(
+        return_value=[{"name": sample_asset.original_filename}]
+    )
+    repo._request_rest = AsyncMock(return_value=[])
+
+    with pytest.raises(
+        AssetReconciliationError,
+        match="Storage object was removed but metadata soft-delete failed",
+    ):
+        await repo.soft_delete(UUID(TEST_USER_ID), sample_asset.id)

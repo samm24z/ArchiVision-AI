@@ -252,24 +252,35 @@ class AssetsRepository:
         asset = await self.get(owner_id, asset_id)
         result = await self._request_storage(
             "POST",
-            "object/sign/project-assets",
+            f"object/sign/{STORAGE_BUCKET}",
             payload={
                 "paths": [asset.storage_path],
                 "expiresIn": SIGNED_URL_EXPIRY_SECONDS,
             },
         )
-        if not isinstance(result, dict):
+        entry: dict | None = None
+        if isinstance(result, list):
+            if not result or not isinstance(result[0], dict):
+                raise AssetRepositoryError("Supabase did not return a signed URL.")
+            entry = result[0]
+        elif isinstance(result, dict):
+            if isinstance(result.get("signedURLs"), list):
+                signed_entries = result["signedURLs"]
+                if not signed_entries or not isinstance(signed_entries[0], dict):
+                    raise AssetRepositoryError("Supabase did not return a signed URL.")
+                entry = signed_entries[0]
+            else:
+                entry = result
+        else:
             raise AssetRepositoryError("Supabase did not return a signed URL.")
-        signed_url = result.get("signedURL") or result.get("signed_url")
-        if not signed_url and isinstance(result.get("signedURLs"), list):
-            signed_entries = result["signedURLs"]
-            if signed_entries and isinstance(signed_entries[0], dict):
-                signed_entry = signed_entries[0]
-                signed_url = signed_entry.get("signedURL") or signed_entry.get(
-                    "signed_url"
-                )
-        if not isinstance(signed_url, str) or not signed_url:
+
+        if entry.get("error"):
+            raise AssetRepositoryError("Supabase Storage error generating signed URL.")
+
+        signed_url = entry.get("signedURL") or entry.get("signed_url")
+        if not isinstance(signed_url, str) or not signed_url.strip():
             raise AssetRepositoryError("Supabase did not return a signed URL.")
+
         return SignedAssetUrlResponse(
             asset_id=asset.id,
             signed_url=f"{self._supabase_url}/storage/v1{signed_url}"
@@ -281,8 +292,8 @@ class AssetsRepository:
         asset = await self.get(owner_id, asset_id)
         try:
             await self._request_storage(
-                "POST",
-                "object/remove",
+                "DELETE",
+                f"object/{STORAGE_BUCKET}",
                 payload={"prefixes": [asset.storage_path]},
             )
         except AssetRepositoryError as error:
